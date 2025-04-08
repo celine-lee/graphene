@@ -1,5 +1,5 @@
 from .unmountedtype import UnmountedType
-from .utils import get_type
+# from .utils import get_type
 
 
 class Structure(UnmountedType):
@@ -21,7 +21,12 @@ class Structure(UnmountedType):
 
     @property
     def of_type(self):
-        return get_type(self._of_type)
+        # return get_type(self._of_type)
+        if isinstance(self._of_type, str):
+            return import_string(self._of_type)
+        if inspect.isfunction(self._of_type) or isinstance(self._of_type, partial):
+            return self._of_type()
+        return self._of_type
 
     def get_type(self):
         """

@@ -2,7 +2,7 @@ from graphql import Undefined
 
 from .mountedtype import MountedType
 from .structures import NonNull
-from .utils import get_type
+# from .utils import get_type
 
 
 class InputField(MountedType):
@@ -71,4 +71,10 @@ class InputField(MountedType):
 
     @property
     def type(self):
-        return get_type(self._type)
+        # return get_type(self._type)
+
+        if isinstance(self._type, str):
+            return import_string(self._type)
+        if inspect.isfunction(self._type) or isinstance(self._type, partial):
+            return self._type()
+        return self._type

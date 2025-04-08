@@ -7,7 +7,7 @@ from .mountedtype import MountedType
 from .resolver import default_resolver
 from .structures import NonNull
 from .unmountedtype import UnmountedType
-from .utils import get_type
+# from .utils import get_type
 from ..utils.deprecated import warn_deprecation
 
 base_type = type
@@ -113,7 +113,12 @@ class Field(MountedType):
 
     @property
     def type(self):
-        return get_type(self._type)
+        if isinstance(self._type, str):
+            return import_string(self._type)
+        if inspect.isfunction(self._type) or isinstance(self._type, partial):
+            return self._type()
+        return self._type
+        # return get_type(self._type)
 
     get_resolver = None
 
