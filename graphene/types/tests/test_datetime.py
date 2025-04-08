@@ -1,6 +1,5 @@
 import datetime
 
-import pytz
 from graphql import GraphQLError
 
 from pytest import fixture
@@ -30,7 +29,7 @@ schema = Schema(query=Query)
 
 @fixture
 def sample_datetime():
-    utc_datetime = datetime.datetime(2019, 5, 25, 5, 30, 15, 10, pytz.utc)
+    utc_datetime = datetime.datetime(2019, 5, 25, 5, 30, 15, 10, datetime.timezone.utc)
     return utc_datetime
 
 
@@ -226,6 +225,18 @@ def test_time_query_variable(sample_time):
     )
     assert not result.errors
     assert result.data == {"time": isoformat}
+
+
+def test_support_isoformat():
+    isoformat = "2011-11-04T00:05:23Z"
+
+    # test time variable provided as Python time
+    result = schema.execute(
+        """query DateTime($time: DateTime){ datetime(in: $time) }""",
+        variables={"time": isoformat},
+    )
+    assert not result.errors
+    assert result.data == {"datetime": "2011-11-04T00:05:23+00:00"}
 
 
 def test_bad_variables(sample_date, sample_datetime, sample_time):

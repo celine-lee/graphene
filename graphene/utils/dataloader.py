@@ -9,7 +9,7 @@ from collections import namedtuple
 from collections.abc import Iterable
 from functools import partial
 
-from typing import List  # flake8: noqa
+from typing import List
 
 Loader = namedtuple("Loader", "key,future")
 
@@ -33,7 +33,6 @@ class DataLoader(object):
         cache_map=None,
         loop=None,
     ):
-
         self._loop = loop
 
         if batch_load_fn is not None:
@@ -63,7 +62,7 @@ class DataLoader(object):
         self.get_cache_key = get_cache_key or (lambda x: x)
 
         self._cache = cache_map if cache_map is not None else {}
-        self._queue = []  # type: List[Loader]
+        self._queue: List[Loader] = []
 
     @property
     def loop(self):

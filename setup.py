@@ -45,47 +45,50 @@ class PyTest(TestCommand):
 
 
 tests_require = [
-    "pytest>=6,<7",
-    "pytest-benchmark>=3.4,<4",
-    "pytest-cov>=3,<4",
+    "pytest>=8,<9",
+    "pytest-benchmark>=4,<5",
+    "pytest-cov>=5,<6",
     "pytest-mock>=3,<4",
     "pytest-asyncio>=0.16,<2",
-    "snapshottest>=0.6,<1",
-    "coveralls>=3.3,<4",
-    "mock>=4,<5",
-    "pytz==2022.1",
-    "iso8601>=1,<2",
+    "coveralls>=3.3,<5",
 ]
 
-dev_requires = ["black==22.3.0", "flake8>=4,<5"] + tests_require
+dev_requires = [
+    "ruff==0.5.0",
+    "types-python-dateutil>=2.8.1,<3",
+    "mypy>=1.10,<2",
+] + tests_require
 
 setup(
     name="graphene",
     version=version,
     description="GraphQL Framework for Python",
     long_description=codecs.open(
-        "README.rst", "r", encoding="ascii", errors="replace"
+        "README.md", "r", encoding="ascii", errors="replace"
     ).read(),
+    long_description_content_type="text/markdown",
     url="https://github.com/graphql-python/graphene",
     author="Syrus Akbary",
     author_email="me@syrusakbary.com",
     license="MIT",
     classifiers=[
-        "Development Status :: 3 - Alpha",
+        "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Developers",
         "Topic :: Software Development :: Libraries",
-        "Programming Language :: Python :: 3.6",
-        "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
     ],
     keywords="api graphql protocol rest relay graphene",
     packages=find_packages(exclude=["examples*"]),
     install_requires=[
         "graphql-core>=3.1,<3.3",
         "graphql-relay>=3.1,<3.3",
-        "aniso8601>=8,<10",
+        "python-dateutil>=2.7.0,<3",
+        "typing-extensions>=4.7.1,<5",
     ],
     tests_require=tests_require,
     extras_require={"test": tests_require, "dev": dev_requires},
