@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 from .base import BaseOptions, BaseType
 from .inputfield import InputField
 from .unmountedtype import UnmountedType
-from .utils import yank_fields_from_attrs
+from .mountedtype import MountedType
 
 # For static type checking with type checker
 if TYPE_CHECKING:
@@ -96,7 +96,19 @@ class InputObjectType(UnmountedType, BaseType):
 
         fields = {}
         for base in reversed(cls.__mro__):
-            fields.update(yank_fields_from_attrs(base.__dict__, _as=InputField))
+            fields_with_names = []
+            for attname, value in list(base.__dict__.items()):
+                if isinstance(value, MountedType):
+                    field = value
+                elif isinstance(value, UnmountedType):
+                    field = InputField.mounted(value)
+                else:
+                    continue
+                if not field:
+                    continue
+                fields_with_names.append((attname, field))
+            extracted_fields = dict(sorted(fields_with_names, key=lambda f: f[1]))
+            fields.update(extracted_fields)
 
         if _meta.fields:
             _meta.fields.update(fields)

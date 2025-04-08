@@ -3,7 +3,8 @@ from typing import TYPE_CHECKING
 from .base import BaseOptions, BaseType, BaseTypeMeta
 from .field import Field
 from .interface import Interface
-from .utils import yank_fields_from_attrs
+from .mountedtype import MountedType
+from .unmountedtype import UnmountedType
 
 from dataclasses import make_dataclass, field
 
@@ -139,7 +140,20 @@ class ObjectType(BaseType, metaclass=ObjectTypeMeta):
             ), f'All interfaces of {cls.__name__} must be a subclass of Interface. Received "{interface}".'
             fields.update(interface._meta.fields)
         for base in reversed(cls.__mro__):
-            fields.update(yank_fields_from_attrs(base.__dict__, _as=Field))
+
+            fields_with_names = []
+            for attname, value in list(base.__dict__.items()):
+                field = None
+                if isinstance(value, MountedType):
+                    field = value
+                elif isinstance(value, UnmountedType):
+                    field = Field.mounted(value)
+                if not field:
+                    continue
+                fields_with_names.append((attname, field))
+            fields_with_names = sorted(fields_with_names, key=lambda f: f[1])
+            extracted_fields = dict(fields_with_names)
+            fields.update(extracted_fields)
         assert not (possible_types and cls.is_type_of), (
             f"{cls.__name__}.Meta.possible_types will cause type collision with {cls.__name__}.is_type_of. "
             "Please use one or other."

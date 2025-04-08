@@ -5,8 +5,9 @@ from ..utils.get_unbound_function import get_unbound_function
 from ..utils.props import props
 from .field import Field
 from .objecttype import ObjectType, ObjectTypeOptions
-from .utils import yank_fields_from_attrs
 from .interface import Interface
+from .mountedtype import MountedType
+from .unmountedtype import UnmountedType
 
 # For static type checking with type checker
 if TYPE_CHECKING:
@@ -89,7 +90,21 @@ class Mutation(ObjectType):
             # If output is defined, we don't need to get the fields
             fields = {}
             for base in reversed(cls.__mro__):
-                fields.update(yank_fields_from_attrs(base.__dict__, _as=Field))
+                fields_with_names = []
+                for attname, value in list(base.__dict__.items()):
+                    if isinstance(value, MountedType):
+                        field = value
+                    elif isinstance(value, UnmountedType):
+                        field = Field.mounted(value)
+                    else:
+                        continue
+                    if not field:
+                        continue
+                    fields_with_names.append((attname, field))
+
+                fields_with_names = sorted(fields_with_names, key=lambda f: f[1])
+                extracted_fields = dict(fields_with_names)
+                fields.update(extracted_fields)
             output = cls
         if not arguments:
             input_class = getattr(cls, "Arguments", None)

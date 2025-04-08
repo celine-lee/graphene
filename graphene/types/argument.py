@@ -1,10 +1,12 @@
+import inspect
+from functools import partial
 from itertools import chain
 from graphql import Undefined
 
 from .dynamic import Dynamic
 from .mountedtype import MountedType
 from .structures import NonNull
-# from .utils import get_type
+from ..utils.module_loading import import_string
 
 
 class Argument(MountedType):
@@ -73,7 +75,6 @@ class Argument(MountedType):
         if inspect.isfunction(self._type) or isinstance(self._type, partial):
             return self._type()
         return self._type
-        # return get_type(self._type)
 
     def __eq__(self, other):
         return isinstance(other, Argument) and (

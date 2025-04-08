@@ -2,7 +2,8 @@ from typing import TYPE_CHECKING
 
 from .base import BaseOptions, BaseType
 from .field import Field
-from .utils import yank_fields_from_attrs
+from .mountedtype import MountedType
+from .unmountedtype import UnmountedType
 
 # For static type checking with type checker
 if TYPE_CHECKING:
@@ -53,7 +54,21 @@ class Interface(BaseType):
 
         fields = {}
         for base in reversed(cls.__mro__):
-            fields.update(yank_fields_from_attrs(base.__dict__, _as=Field))
+            fields_with_names = []
+            for attname, value in list(base.__dict__.items()):
+                if isinstance(value, MountedType):
+                    field = value
+                elif isinstance(value, UnmountedType):
+                    field = Field.mounted(value)
+                else:
+                    continue
+                if not field:
+                    continue
+                fields_with_names.append((attname, field))
+
+            fields_with_names = sorted(fields_with_names, key=lambda f: f[1])
+            extracted_fields = dict(fields_with_names)
+            fields.update(extracted_fields)
 
         if _meta.fields:
             _meta.fields.update(fields)

@@ -50,7 +50,8 @@ from .resolver import get_default_resolver
 from .scalars import ID, Boolean, Float, Int, Scalar, String
 from .structures import List, NonNull
 from .union import Union
-from .utils import get_field_as
+from .mountedtype import MountedType
+from .unmountedtype import UnmountedType
 
 introspection_query = get_introspection_query()
 IntrospectionSchema = introspection_types["__Schema"]
@@ -306,7 +307,12 @@ class TypeMap(dict):
         fields = {}
         for name, field in graphene_type._meta.fields.items():
             if isinstance(field, Dynamic):
-                field = get_field_as(field.get_type(self), _as=Field)
+                if isinstance(field.get_type(self), MountedType):
+                    field = field.get_type(self)
+                elif isinstance(field.get_type(self), UnmountedType):
+                    field = Field.mounted(field.get_type(self))
+                else:
+                    continue
                 if not field:
                     continue
             field_type = create_graphql_type(field.type)
