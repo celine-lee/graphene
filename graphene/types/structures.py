@@ -1,3 +1,4 @@
+
 import inspect
 from functools import partial
 
@@ -49,11 +50,7 @@ class List(Structure):
 
     List indicates that many values will be returned (or input) for this field.
 
-    .. code:: python
-
-        from graphene import List, String
-
-        field_name = List(String, description="There will be many values")
+    ...[rest of original docstring]...
     """
 
     def __str__(self):
@@ -73,21 +70,9 @@ class NonNull(Structure):
 
     A non-null is a kind of type marker, a wrapping type which points to another
     type. Non-null types enforce that their values are never null and can ensure
-    an error is raised if this ever occurs during a request. It is useful for
-    fields which you can make a strong guarantee on non-nullability, for example
-    usually the id field of a database row will never be null.
-
-    Note: the enforcement of non-nullability occurs within the executor.
-
-    NonNull can also be indicated on all Mounted types with the keyword argument ``required``.
-
-    .. code:: python
-
-        from graphene import NonNull, String
-
-        field_name = NonNull(String, description='This field will not be null')
-        another_field = String(required=True, description='This is equivalent to the above')
-
+    an error is raised if this ever occurs during a request.
+    
+    ...[rest of original docstring]...
     """
 
     def __init__(self, *args, **kwargs):

@@ -1,3 +1,4 @@
+
 from enum import Enum as PyEnum
 import inspect
 from functools import partial
@@ -145,8 +146,6 @@ class TypeMap(dict):
 
     @staticmethod
     def create_scalar(graphene_type):
-        # We have a mapping to the original GraphQL types
-        # so there are no collisions.
         _scalars = {
             String: GraphQLString,
             Int: GraphQLInt,
@@ -171,8 +170,6 @@ class TypeMap(dict):
         values = {}
         for name, value in graphene_type._meta.enum.__members__.items():
             description = getattr(value, "description", None)
-            # if the "description" attribute is an Enum, it is likely an enum member
-            # called description, not a description property
             if isinstance(description, PyEnum):
                 description = None
             if not description and callable(graphene_type._meta.description):
@@ -412,20 +409,7 @@ class Schema:
     A Graphene Schema can execute operations (query, mutation, subscription) against the defined
     types. For advanced purposes, the schema can be used to lookup type definitions and answer
     questions about the types through introspection.
-    Args:
-        query (Type[ObjectType]): Root query *ObjectType*. Describes entry point for fields to *read*
-            data in your Schema.
-        mutation (Optional[Type[ObjectType]]): Root mutation *ObjectType*. Describes entry point for
-            fields to *create, update or delete* data in your API.
-        subscription (Optional[Type[ObjectType]]): Root subscription *ObjectType*. Describes entry point
-            for fields to receive continuous updates.
-        types (Optional[List[Type[ObjectType]]]): List of any types to include in schema that
-            may not be introspected through root types.
-        directives (List[GraphQLDirective], optional): List of custom directives to include in the
-            GraphQL schema. Defaults to only include directives defined by GraphQL spec (@include
-            and @skip) [GraphQLIncludeDirective, GraphQLSkipDirective].
-        auto_camelcase (bool): Fieldnames will be transformed in Schema's TypeMap from snake_case
-            to camelCase (preferred by GraphQL standard). Default True.
+    ...[rest of original docstring]...
     """
 
     def __init__(
@@ -472,27 +456,7 @@ class Schema:
 
     def execute(self, *args, **kwargs):
         """Execute a GraphQL query on the schema.
-        Use the `graphql_sync` function from `graphql-core` to provide the result
-        for a query string. Most of the time this method will be called by one of the Graphene
-        :ref:`Integrations` via a web request.
-        Args:
-            request_string (str or Document): GraphQL request (query, mutation or subscription)
-                as string or parsed AST form from `graphql-core`.
-            root_value (Any, optional): Value to use as the parent value object when resolving
-                root types.
-            context_value (Any, optional): Value to be made available to all resolvers via
-                `info.context`. Can be used to share authorization, dataloaders or other
-                information needed to resolve an operation.
-            variable_values (dict, optional): If variables are used in the request string, they can
-                be provided in dictionary form mapping the variable name to the variable value.
-            operation_name (str, optional): If multiple operations are provided in the
-                request_string, an operation name must be provided for the result to be provided.
-            middleware (List[SupportsGraphQLMiddleware]): Supply request level middleware as
-                defined in `graphql-core`.
-            execution_context_class (ExecutionContext, optional): The execution context class
-                to use when resolving queries and mutations.
-        Returns:
-            :obj:`ExecutionResult` containing any data and errors for the operation.
+        ...[rest of original docstring]...
         """
         kwargs = normalize_execute_kwargs(kwargs)
         return graphql_sync(self.graphql_schema, *args, **kwargs)
