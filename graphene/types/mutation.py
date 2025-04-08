@@ -1,3 +1,4 @@
+
 from typing import TYPE_CHECKING
 
 from ..utils.deprecated import warn_deprecation
@@ -13,6 +14,19 @@ from .unmountedtype import UnmountedType
 if TYPE_CHECKING:
     from .argument import Argument  # NOQA
     from typing import Dict, Type, Callable, Iterable  # NOQA
+
+
+def _collect_fields(cls, mount_fn):
+    collected = {}
+    for base in reversed(cls.__mro__):
+        fields_with_names = []
+        for attname, value in base.__dict__.items():
+            field_val = mount_fn(value)
+            if field_val:
+                fields_with_names.append((attname, field_val))
+        fields_with_names.sort(key=lambda tup: tup[1])
+        collected.update(dict(fields_with_names))
+    return collected
 
 
 class MutationOptions(ObjectTypeOptions):
@@ -63,7 +77,7 @@ class Mutation(ObjectType):
         interfaces (Iterable[graphene.Interface]): GraphQL interfaces to extend with the payload
             object. All fields from interface will be included in this object's schema.
         fields (Dict[str, graphene.Field]): Dictionary of field name to Field. Not recommended to
-            use (prefer class attributes or ``Meta.output``).
+            use (prefer class attributes).
     """
 
     @classmethod
@@ -86,26 +100,17 @@ class Mutation(ObjectType):
                 interface, Interface
             ), f'All interfaces of {cls.__name__} must be a subclass of Interface. Received "{interface}".'
             fields.update(interface._meta.fields)
-        if not output:
-            # If output is defined, we don't need to get the fields
-            fields = {}
-            for base in reversed(cls.__mro__):
-                fields_with_names = []
-                for attname, value in list(base.__dict__.items()):
-                    if isinstance(value, MountedType):
-                        field = value
-                    elif isinstance(value, UnmountedType):
-                        field = Field.mounted(value)
-                    else:
-                        continue
-                    if not field:
-                        continue
-                    fields_with_names.append((attname, field))
 
-                fields_with_names = sorted(fields_with_names, key=lambda f: f[1])
-                extracted_fields = dict(fields_with_names)
-                fields.update(extracted_fields)
+        if not output:
+            # If output is not defined, collect fields from the Mutation class.
+            fields = _collect_fields(
+                cls,
+                lambda value: value if isinstance(value, MountedType)
+                else Field.mounted(value) if isinstance(value, UnmountedType)
+                else None,
+            )
             output = cls
+
         if not arguments:
             input_class = getattr(cls, "Arguments", None)
             if not input_class:

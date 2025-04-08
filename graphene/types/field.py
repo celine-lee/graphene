@@ -1,3 +1,4 @@
+
 import inspect
 from collections.abc import Mapping
 from functools import partial
@@ -92,12 +93,10 @@ class Field(MountedType):
         if required:
             type_ = NonNull(type_)
 
-        # Check if name is actually an argument of the field
         if isinstance(name, (Argument, UnmountedType)):
             extra_args["name"] = name
             name = None
 
-        # Check if source is actually an argument of the field
         if isinstance(source, (Argument, UnmountedType)):
             extra_args["source"] = source
             source = None
@@ -123,21 +122,12 @@ class Field(MountedType):
     get_resolver = None
 
     def wrap_resolve(self, parent_resolver):
-        """
-        Wraps a function resolver, using the ObjectType resolve_{FIELD_NAME}
-        (parent_resolver) if the Field definition has no resolver.
-        """
         if self.get_resolver is not None:
             warn_deprecation(
                 "The get_resolver method is being deprecated, please rename it to wrap_resolve."
             )
             return self.get_resolver(parent_resolver)
-
         return self.resolver or parent_resolver
 
     def wrap_subscribe(self, parent_subscribe):
-        """
-        Wraps a function subscribe, using the ObjectType subscribe_{FIELD_NAME}
-        (parent_subscribe) if the Field definition has no subscribe.
-        """
         return parent_subscribe

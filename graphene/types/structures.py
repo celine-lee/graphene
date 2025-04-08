@@ -1,3 +1,4 @@
+
 import inspect
 from functools import partial
 
@@ -24,7 +25,7 @@ class Structure(UnmountedType):
 
     @property
     def of_type(self):
-        # return get_type(self._of_type)
+        # Return the wrapped type; if a string, import it; if callable, call it.
         if isinstance(self._of_type, str):
             return import_string(self._of_type)
         if inspect.isfunction(self._of_type) or isinstance(self._of_type, partial):

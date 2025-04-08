@@ -1,3 +1,4 @@
+
 import inspect
 from functools import partial
 from itertools import chain
@@ -101,8 +102,7 @@ def to_arguments(args, extra_args=None):
         if isinstance(arg, Dynamic):
             arg = arg.get_type()
             if arg is None:
-                # If the Dynamic type returned None
-                # then we skip the Argument
+                # If the Dynamic type returned None then we skip the Argument
                 continue
 
         if isinstance(arg, UnmountedType):

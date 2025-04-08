@@ -1,3 +1,4 @@
+
 from typing import TYPE_CHECKING
 
 from .base import BaseOptions, BaseType
@@ -10,9 +11,17 @@ if TYPE_CHECKING:
     from typing import Dict, Callable  # NOQA
 
 
-class InputObjectTypeOptions(BaseOptions):
-    fields = None  # type: Dict[str, InputField]
-    container = None  # type: InputObjectTypeContainer
+def _collect_input_fields(cls, mount_fn):
+    collected = {}
+    for base in reversed(cls.__mro__):
+        fields_with_names = []
+        for attname, value in base.__dict__.items():
+            field_val = mount_fn(value)
+            if field_val:
+                fields_with_names.append((attname, field_val))
+        fields_with_names.sort(key=lambda tup: tup[1])
+        collected.update(dict(fields_with_names))
+    return collected
 
 
 # Currently in Graphene, we get a `None` whenever we access an (optional) field that was not set in an InputObjectType
@@ -20,12 +29,6 @@ class InputObjectTypeOptions(BaseOptions):
 # historical) arrangement, we cannot distinguish between a field not being set and a field being set to None.
 # At the same time, we shouldn't break existing code that expects a `None` when accessing a field that was not set.
 _INPUT_OBJECT_TYPE_DEFAULT_VALUE = None
-
-# To mitigate this, we provide the function `set_input_object_type_default_value` to allow users to change the default
-# value returned in non-specified fields in InputObjectType to another meaningful sentinel value (e.g. Undefined)
-# if they want to. This way, we can keep code that expects a `None` working while we figure out a better solution (or
-# a well-documented breaking change) for this issue.
-
 
 def set_input_object_type_default_value(default_value):
     """
@@ -60,7 +63,7 @@ class InputObjectType(UnmountedType, BaseType):
     An input object defines a structured collection of fields which may be
     supplied to a field argument.
 
-    Using ``graphene.NonNull`` will ensure that a input value must be provided by the query.
+    Using ``graphene.NonNull`` will ensure that an input value must be provided by the query.
 
     All class attributes of ``graphene.InputObjectType`` are implicitly mounted as InputField
     using the below Meta class options.
@@ -94,22 +97,12 @@ class InputObjectType(UnmountedType, BaseType):
         if not _meta:
             _meta = InputObjectTypeOptions(cls)
 
-        fields = {}
-        for base in reversed(cls.__mro__):
-            fields_with_names = []
-            for attname, value in list(base.__dict__.items()):
-                if isinstance(value, MountedType):
-                    field = value
-                elif isinstance(value, UnmountedType):
-                    field = InputField.mounted(value)
-                else:
-                    continue
-                if not field:
-                    continue
-                fields_with_names.append((attname, field))
-            extracted_fields = dict(sorted(fields_with_names, key=lambda f: f[1]))
-            fields.update(extracted_fields)
-
+        fields = _collect_input_fields(
+            cls,
+            lambda value: value if isinstance(value, MountedType)
+            else InputField.mounted(value) if isinstance(value, UnmountedType)
+            else None,
+        )
         if _meta.fields:
             _meta.fields.update(fields)
         else:

@@ -1,3 +1,4 @@
+
 from typing import TYPE_CHECKING
 
 from .base import BaseOptions, BaseType
@@ -10,6 +11,19 @@ if TYPE_CHECKING:
     from typing import Dict, Iterable, Type  # NOQA
 
 
+def _collect_fields(cls, mount_fn):
+    collected = {}
+    for base in reversed(cls.__mro__):
+        fields_with_names = []
+        for attname, value in base.__dict__.items():
+            field_val = mount_fn(value)
+            if field_val:
+                fields_with_names.append((attname, field_val))
+        fields_with_names.sort(key=lambda tup: tup[1])
+        collected.update(dict(fields_with_names))
+    return collected
+
+
 class InterfaceOptions(BaseOptions):
     fields = None  # type: Dict[str, Field]
     interfaces = ()  # type: Iterable[Type[Interface]]
@@ -19,7 +33,7 @@ class Interface(BaseType):
     """
     Interface Type Definition
 
-    When a field can return one of a heterogeneous set of types, a Interface type
+    When a field can return one of a heterogeneous set of types, an Interface type
     is used to describe what types are possible, what fields are in common across
     all types, as well as a function to determine which type is actually used
     when the field is resolved.
@@ -52,23 +66,13 @@ class Interface(BaseType):
         if not _meta:
             _meta = InterfaceOptions(cls)
 
-        fields = {}
-        for base in reversed(cls.__mro__):
-            fields_with_names = []
-            for attname, value in list(base.__dict__.items()):
-                if isinstance(value, MountedType):
-                    field = value
-                elif isinstance(value, UnmountedType):
-                    field = Field.mounted(value)
-                else:
-                    continue
-                if not field:
-                    continue
-                fields_with_names.append((attname, field))
-
-            fields_with_names = sorted(fields_with_names, key=lambda f: f[1])
-            extracted_fields = dict(fields_with_names)
-            fields.update(extracted_fields)
+        # Abstract the field collection from the class bases.
+        fields = _collect_fields(
+            cls,
+            lambda value: value if isinstance(value, MountedType)
+            else Field.mounted(value) if isinstance(value, UnmountedType)
+            else None,
+        )
 
         if _meta.fields:
             _meta.fields.update(fields)

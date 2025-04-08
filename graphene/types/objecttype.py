@@ -1,3 +1,4 @@
+
 from typing import TYPE_CHECKING
 
 from .base import BaseOptions, BaseType, BaseTypeMeta
@@ -13,6 +14,19 @@ if TYPE_CHECKING:
     from typing import Dict, Iterable, Type  # NOQA
 
 
+def _collect_fields(cls, mount_fn):
+    collected = {}
+    for base in reversed(cls.__mro__):
+        fields_with_names = []
+        for attname, value in base.__dict__.items():
+            field_val = mount_fn(value)
+            if field_val:
+                fields_with_names.append((attname, field_val))
+        fields_with_names.sort(key=lambda tup: tup[1])
+        collected.update(dict(fields_with_names))
+    return collected
+
+
 class ObjectTypeOptions(BaseOptions):
     fields = None  # type: Dict[str, Field]
     interfaces = ()  # type: Iterable[Type[Interface]]
@@ -21,8 +35,6 @@ class ObjectTypeOptions(BaseOptions):
 class ObjectTypeMeta(BaseTypeMeta):
     def __new__(cls, name_, bases, namespace, **options):
         # Note: it's safe to pass options as keyword arguments as they are still type-checked by ObjectTypeOptions.
-
-        # We create this type, to then overload it with the dataclass attrs
         class InterObjectType:
             pass
 
@@ -42,10 +54,10 @@ class ObjectTypeMeta(BaseTypeMeta):
                 )
                 for key, field_value in base_cls._meta.fields.items()
             ]
-            dataclass = make_dataclass(name_, fields, bases=())
-            InterObjectType.__init__ = dataclass.__init__
-            InterObjectType.__eq__ = dataclass.__eq__
-            InterObjectType.__repr__ = dataclass.__repr__
+            dataclass_type = make_dataclass(name_, fields, bases=())
+            InterObjectType.__init__ = dataclass_type.__init__
+            InterObjectType.__eq__ = dataclass_type.__eq__
+            InterObjectType.__repr__ = dataclass_type.__repr__
         return base_cls
 
 
@@ -133,27 +145,19 @@ class ObjectType(BaseType, metaclass=ObjectTypeMeta):
         if not _meta:
             _meta = ObjectTypeOptions(cls)
         fields = {}
-
         for interface in interfaces:
             assert issubclass(
                 interface, Interface
             ), f'All interfaces of {cls.__name__} must be a subclass of Interface. Received "{interface}".'
             fields.update(interface._meta.fields)
-        for base in reversed(cls.__mro__):
-
-            fields_with_names = []
-            for attname, value in list(base.__dict__.items()):
-                field = None
-                if isinstance(value, MountedType):
-                    field = value
-                elif isinstance(value, UnmountedType):
-                    field = Field.mounted(value)
-                if not field:
-                    continue
-                fields_with_names.append((attname, field))
-            fields_with_names = sorted(fields_with_names, key=lambda f: f[1])
-            extracted_fields = dict(fields_with_names)
-            fields.update(extracted_fields)
+        fields.update(
+            _collect_fields(
+                cls,
+                lambda value: value if isinstance(value, MountedType)
+                else Field.mounted(value) if isinstance(value, UnmountedType)
+                else None,
+            )
+        )
         assert not (possible_types and cls.is_type_of), (
             f"{cls.__name__}.Meta.possible_types will cause type collision with {cls.__name__}.is_type_of. "
             "Please use one or other."

@@ -1,3 +1,4 @@
+
 from enum import Enum as PyEnum
 import inspect
 from functools import partial
@@ -145,12 +146,10 @@ class TypeMap(dict):
 
     @staticmethod
     def create_scalar(graphene_type):
-        # We have a mapping to the original GraphQL types
-        # so there are no collisions.
         _scalars = {
             String: GraphQLString,
             Int: GraphQLInt,
-            Float: GraphQLFloat,
+            GraphQLFloat: GraphQLFloat,
             Boolean: GraphQLBoolean,
             ID: GraphQLID,
         }
@@ -171,8 +170,6 @@ class TypeMap(dict):
         values = {}
         for name, value in graphene_type._meta.enum.__members__.items():
             description = getattr(value, "description", None)
-            # if the "description" attribute is an Enum, it is likely an enum member
-            # called description, not a description property
             if isinstance(description, PyEnum):
                 description = None
             if not description and callable(graphene_type._meta.description):
@@ -307,10 +304,11 @@ class TypeMap(dict):
         fields = {}
         for name, field in graphene_type._meta.fields.items():
             if isinstance(field, Dynamic):
-                if isinstance(field.get_type(self), MountedType):
-                    field = field.get_type(self)
-                elif isinstance(field.get_type(self), UnmountedType):
-                    field = Field.mounted(field.get_type(self))
+                typ = field.get_type(self)
+                if isinstance(typ, MountedType):
+                    field = typ
+                elif isinstance(typ, UnmountedType):
+                    field = Field.mounted(typ)
                 else:
                     continue
                 if not field:
@@ -341,10 +339,6 @@ class TypeMap(dict):
                         graphene_type, f"subscribe_{name}", name, field.default_value
                     )
                 )
-
-                # If we are in a subscription, we use (by default) an
-                # identity-based resolver for the root, rather than the
-                # default resolver for objects/dicts.
                 if subscribe:
                     field_default_resolver = identity_resolve
                 elif issubclass(graphene_type, ObjectType):
@@ -377,13 +371,10 @@ class TypeMap(dict):
         return fields
 
     def get_function_for_type(self, graphene_type, func_name, name, default_value):
-        """Gets a resolve or subscribe function for a given ObjectType"""
         if not issubclass(graphene_type, ObjectType):
             return
         resolver = getattr(graphene_type, func_name, None)
         if not resolver:
-            # If we don't find the resolver in the ObjectType class, then try to
-            # find it in each of the interfaces
             interface_resolver = None
             for interface in graphene_type._meta.interfaces:
                 if name not in interface._meta.fields:
@@ -393,18 +384,14 @@ class TypeMap(dict):
                     break
             resolver = interface_resolver
 
-        # Only if is not decorated with classmethod
         if resolver:
             return get_unbound_function(resolver)
 
     def resolve_type(self, resolve_type_func, type_name, root, info, _type):
         type_ = resolve_type_func(root, info)
-
         if inspect.isclass(type_) and issubclass(type_, ObjectType):
             return type_._meta.name
-
-        return_type = self[type_name]
-        return default_type_resolver(root, info, return_type)
+        return default_type_resolver(root, info, self[type_name])
 
 
 class Schema:
@@ -455,11 +442,6 @@ class Schema:
         return print_schema(self.graphql_schema)
 
     def __getattr__(self, type_name):
-        """
-        This function let the developer select a type in a given schema
-        by accessing its attrs.
-        Example: using schema.Query for accessing the "Query" type in the Schema
-        """
         _type = self.graphql_schema.get_type(type_name)
         if _type is None:
             raise AttributeError(f'Type "{type_name}" not found in the Schema')
@@ -471,53 +453,23 @@ class Schema:
         return lambda: self.get_type(_type)
 
     def execute(self, *args, **kwargs):
-        """Execute a GraphQL query on the schema.
-        Use the `graphql_sync` function from `graphql-core` to provide the result
-        for a query string. Most of the time this method will be called by one of the Graphene
-        :ref:`Integrations` via a web request.
-        Args:
-            request_string (str or Document): GraphQL request (query, mutation or subscription)
-                as string or parsed AST form from `graphql-core`.
-            root_value (Any, optional): Value to use as the parent value object when resolving
-                root types.
-            context_value (Any, optional): Value to be made available to all resolvers via
-                `info.context`. Can be used to share authorization, dataloaders or other
-                information needed to resolve an operation.
-            variable_values (dict, optional): If variables are used in the request string, they can
-                be provided in dictionary form mapping the variable name to the variable value.
-            operation_name (str, optional): If multiple operations are provided in the
-                request_string, an operation name must be provided for the result to be provided.
-            middleware (List[SupportsGraphQLMiddleware]): Supply request level middleware as
-                defined in `graphql-core`.
-            execution_context_class (ExecutionContext, optional): The execution context class
-                to use when resolving queries and mutations.
-        Returns:
-            :obj:`ExecutionResult` containing any data and errors for the operation.
-        """
         kwargs = normalize_execute_kwargs(kwargs)
         return graphql_sync(self.graphql_schema, *args, **kwargs)
 
     async def execute_async(self, *args, **kwargs):
-        """Execute a GraphQL query on the schema asynchronously.
-        Same as `execute`, but uses `graphql` instead of `graphql_sync`.
-        """
         kwargs = normalize_execute_kwargs(kwargs)
         return await graphql(self.graphql_schema, *args, **kwargs)
 
     async def subscribe(self, query, *args, **kwargs):
-        """Execute a GraphQL subscription on the schema asynchronously."""
-        # Do parsing
         try:
             document = parse(query)
         except GraphQLError as error:
             return ExecutionResult(data=None, errors=[error])
 
-        # Do validation
         validation_errors = validate(self.graphql_schema, document)
         if validation_errors:
             return ExecutionResult(data=None, errors=validation_errors)
 
-        # Execute the query
         kwargs = normalize_execute_kwargs(kwargs)
         return await subscribe(self.graphql_schema, document, *args, **kwargs)
 
@@ -529,7 +481,6 @@ class Schema:
 
 
 def normalize_execute_kwargs(kwargs):
-    """Replace alias names in keyword arguments for graphql()"""
     if "root" in kwargs and "root_value" not in kwargs:
         kwargs["root_value"] = kwargs.pop("root")
     if "context" in kwargs and "context_value" not in kwargs:
