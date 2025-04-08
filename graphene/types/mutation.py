@@ -1,3 +1,4 @@
+
 from typing import TYPE_CHECKING
 
 from ..utils.deprecated import warn_deprecation
@@ -9,10 +10,29 @@ from .interface import Interface
 from .mountedtype import MountedType
 from .unmountedtype import UnmountedType
 
-# For static type checking with type checker
 if TYPE_CHECKING:
     from .argument import Argument  # NOQA
-    from typing import Dict, Type, Callable, Iterable  # NOQA
+    from typing import Dict, Type, Callable, Iterable
+
+
+def _extract_fields(cls, mount_func):
+    """Helper to extract field definitions from class bases using the provided mount_func."""
+    fields = {}
+    for base in reversed(cls.__mro__):
+        collected = []
+        for attname, value in base.__dict__.items():
+            if isinstance(value, MountedType):
+                field_val = value
+            elif isinstance(value, UnmountedType):
+                field_val = mount_func(value)
+            else:
+                continue
+            if not field_val:
+                continue
+            collected.append((attname, field_val))
+        collected = sorted(collected, key=lambda f: f[1])
+        fields.update(dict(collected))
+    return fields
 
 
 class MutationOptions(ObjectTypeOptions):
@@ -24,12 +44,10 @@ class MutationOptions(ObjectTypeOptions):
 
 class Mutation(ObjectType):
     """
-    Object Type Definition (mutation field)
+    Represents a Mutation field. Mutation is a convenience type for defining a Field with
+    corresponding arguments and output.
 
-    Mutation is a convenience type that helps us build a Field which takes Arguments and returns a
-    mutation Output ObjectType.
-
-    .. code:: python
+    Example:
 
         import graphene
 
@@ -47,65 +65,31 @@ class Mutation(ObjectType):
 
         class Mutation(graphene.ObjectType):
             create_person = CreatePerson.Field()
-
-    Meta class options (optional):
-        output (graphene.ObjectType): Or ``Output`` inner class with attributes on Mutation class.
-            Or attributes from Mutation class. Fields which can be returned from this mutation
-            field.
-        resolver (Callable resolver method): Or ``mutate`` method on Mutation class. Perform data
-            change and return output.
-        arguments (Dict[str, graphene.Argument]): Or ``Arguments`` inner class with attributes on
-            Mutation class. Arguments to use for the mutation Field.
-        name (str): Name of the GraphQL type (must be unique in schema). Defaults to class
-            name.
-        description (str): Description of the GraphQL type in the schema. Defaults to class
-            docstring.
-        interfaces (Iterable[graphene.Interface]): GraphQL interfaces to extend with the payload
-            object. All fields from interface will be included in this object's schema.
-        fields (Dict[str, graphene.Field]): Dictionary of field name to Field. Not recommended to
-            use (prefer class attributes or ``Meta.output``).
     """
 
     @classmethod
     def __init_subclass_with_meta__(
-        cls,
-        interfaces=(),
-        resolver=None,
-        output=None,
-        arguments=None,
-        _meta=None,
-        **options,
+        cls, interfaces=(), resolver=None, output=None, arguments=None, _meta=None, **options
     ):
         if not _meta:
             _meta = MutationOptions(cls)
+
         output = output or getattr(cls, "Output", None)
         fields = {}
 
+        # Merge fields coming from interfaces.
         for interface in interfaces:
-            assert issubclass(
-                interface, Interface
-            ), f'All interfaces of {cls.__name__} must be a subclass of Interface. Received "{interface}".'
+            assert issubclass(interface, Interface), (
+                f'All interfaces of {cls.__name__} must be a subclass of Interface. '
+                f'Received "{interface}".'
+            )
             fields.update(interface._meta.fields)
-        if not output:
-            # If output is defined, we don't need to get the fields
-            fields = {}
-            for base in reversed(cls.__mro__):
-                fields_with_names = []
-                for attname, value in list(base.__dict__.items()):
-                    if isinstance(value, MountedType):
-                        field = value
-                    elif isinstance(value, UnmountedType):
-                        field = Field.mounted(value)
-                    else:
-                        continue
-                    if not field:
-                        continue
-                    fields_with_names.append((attname, field))
 
-                fields_with_names = sorted(fields_with_names, key=lambda f: f[1])
-                extracted_fields = dict(fields_with_names)
-                fields.update(extracted_fields)
+        if not output:
+            # Extract fields defined on the mutation
+            fields.update(_extract_fields(cls, Field.mounted))
             output = cls
+
         if not arguments:
             input_class = getattr(cls, "Arguments", None)
             if not input_class:
@@ -114,18 +98,20 @@ class Mutation(ObjectType):
                     warn_deprecation(
                         f"Please use {cls.__name__}.Arguments instead of {cls.__name__}.Input."
                         " Input is now only used in ClientMutationID.\n"
-                        "Read more:"
-                        " https://github.com/graphql-python/graphene/blob/v2.0.0/UPGRADE-v2.0.md#mutation-input"
+                        "Read more: https://github.com/graphql-python/graphene/blob/v2.0.0/UPGRADE-v2.0.md#mutation-input"
                     )
             arguments = props(input_class) if input_class else {}
+
         if not resolver:
             mutate = getattr(cls, "mutate", None)
-            assert mutate, "All mutations must define a mutate method in it"
+            assert mutate, "All mutations must define a mutate method."
             resolver = get_unbound_function(mutate)
+
         if _meta.fields:
             _meta.fields.update(fields)
         else:
             _meta.fields = fields
+
         _meta.interfaces = interfaces
         _meta.output = output
         _meta.resolver = resolver
@@ -134,10 +120,8 @@ class Mutation(ObjectType):
         super(Mutation, cls).__init_subclass_with_meta__(_meta=_meta, **options)
 
     @classmethod
-    def Field(
-        cls, name=None, description=None, deprecation_reason=None, required=False
-    ):
-        """Mount instance of mutation Field."""
+    def Field(cls, name=None, description=None, deprecation_reason=None, required=False):
+        """Mounts an instance of the mutation Field."""
         return Field(
             cls._meta.output,
             args=cls._meta.arguments,

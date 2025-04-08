@@ -1,3 +1,4 @@
+
 from typing import TYPE_CHECKING
 
 from .base import BaseOptions, BaseType
@@ -5,9 +6,29 @@ from .field import Field
 from .mountedtype import MountedType
 from .unmountedtype import UnmountedType
 
-# For static type checking with type checker
 if TYPE_CHECKING:
-    from typing import Dict, Iterable, Type  # NOQA
+    from typing import Dict, Iterable, Type
+
+
+def _extract_fields(cls):
+    """Extract fields from the class bases using Field.mounted for unmounted types."""
+    fields = {}
+    for base in reversed(cls.__mro__):
+        collected = []
+        for attname, value in base.__dict__.items():
+            if isinstance(value, MountedType):
+                field_val = value
+            elif isinstance(value, UnmountedType):
+                field_val = Field.mounted(value)
+            else:
+                continue
+            if not field_val:
+                continue
+            collected.append((attname, field_val))
+        # sort to preserve the field ordering
+        collected = sorted(collected, key=lambda f: f[1])
+        fields.update(dict(collected))
+    return fields
 
 
 class InterfaceOptions(BaseOptions):
@@ -19,12 +40,12 @@ class Interface(BaseType):
     """
     Interface Type Definition
 
-    When a field can return one of a heterogeneous set of types, a Interface type
+    When a field can return one of a heterogeneous set of types, an Interface type
     is used to describe what types are possible, what fields are in common across
     all types, as well as a function to determine which type is actually used
     when the field is resolved.
 
-    .. code:: python
+    Example:
 
         from graphene import Interface, String
 
@@ -39,12 +60,9 @@ class Interface(BaseType):
     ``resolve_type`` on Interface and an ObjectType with ``Meta.possible_types`` or ``is_type_of``.
 
     Meta:
-        name (str): Name of the GraphQL type (must be unique in schema). Defaults to class
-            name.
-        description (str): Description of the GraphQL type in the schema. Defaults to class
-            docstring.
-        fields (Dict[str, graphene.Field]): Dictionary of field name to Field. Not recommended to
-            use (prefer class attributes).
+        name (str): The GraphQL type name.
+        description (str): A useful description for the type.
+        fields (Dict[str, Field]): A mapping of field names to Field instances.
     """
 
     @classmethod
@@ -52,28 +70,11 @@ class Interface(BaseType):
         if not _meta:
             _meta = InterfaceOptions(cls)
 
-        fields = {}
-        for base in reversed(cls.__mro__):
-            fields_with_names = []
-            for attname, value in list(base.__dict__.items()):
-                if isinstance(value, MountedType):
-                    field = value
-                elif isinstance(value, UnmountedType):
-                    field = Field.mounted(value)
-                else:
-                    continue
-                if not field:
-                    continue
-                fields_with_names.append((attname, field))
-
-            fields_with_names = sorted(fields_with_names, key=lambda f: f[1])
-            extracted_fields = dict(fields_with_names)
-            fields.update(extracted_fields)
-
+        extracted_fields = _extract_fields(cls)
         if _meta.fields:
-            _meta.fields.update(fields)
+            _meta.fields.update(extracted_fields)
         else:
-            _meta.fields = fields
+            _meta.fields = extracted_fields
 
         if not _meta.interfaces:
             _meta.interfaces = interfaces
@@ -83,7 +84,6 @@ class Interface(BaseType):
     @classmethod
     def resolve_type(cls, instance, info):
         from .objecttype import ObjectType
-
         if isinstance(instance, ObjectType):
             return type(instance)
 
