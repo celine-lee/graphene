@@ -1,3 +1,4 @@
+
 from typing import TYPE_CHECKING
 
 from ..utils.deprecated import warn_deprecation
@@ -9,10 +10,45 @@ from .interface import Interface
 from .mountedtype import MountedType
 from .unmountedtype import UnmountedType
 
-# For static type checking with type checker
 if TYPE_CHECKING:
     from .argument import Argument  # NOQA
     from typing import Dict, Type, Callable, Iterable  # NOQA
+
+
+def _resolve_type(type_):
+    from ..utils.module_loading import import_string
+    from functools import partial
+    import inspect
+    if isinstance(type_, str):
+        return import_string(type_)
+    if inspect.isfunction(type_) or isinstance(type_, partial):
+        return type_()
+    return type_
+
+
+def _extract_fields_from_mro(cls, mount_method):
+    """
+    Iterates the MRO of cls and returns a dictionary of field names to mounted field instances.
+    mount_method is used to mount values that are not already mounted.
+    """
+    fields = {}
+    for base in reversed(cls.__mro__):
+        fields_with_names = []
+        for attname, value in list(base.__dict__.items()):
+            # Try to mount the value if it is one of our unmounted types.
+            if isinstance(value, MountedType):
+                field_obj = value
+            elif isinstance(value, UnmountedType):
+                field_obj = mount_method(value)
+            else:
+                continue
+            if not field_obj:
+                continue
+            fields_with_names.append((attname, field_obj))
+        # preserve order if needed (old code sorted by the field instance)
+        for name, f in sorted(fields_with_names, key=lambda item: item[1]):
+            fields[name] = f
+    return fields
 
 
 class MutationOptions(ObjectTypeOptions):
@@ -28,9 +64,8 @@ class Mutation(ObjectType):
 
     Mutation is a convenience type that helps us build a Field which takes Arguments and returns a
     mutation Output ObjectType.
-
-    .. code:: python
-
+    
+    Example:
         import graphene
 
         class CreatePerson(graphene.Mutation):
@@ -47,23 +82,9 @@ class Mutation(ObjectType):
 
         class Mutation(graphene.ObjectType):
             create_person = CreatePerson.Field()
-
-    Meta class options (optional):
-        output (graphene.ObjectType): Or ``Output`` inner class with attributes on Mutation class.
-            Or attributes from Mutation class. Fields which can be returned from this mutation
-            field.
-        resolver (Callable resolver method): Or ``mutate`` method on Mutation class. Perform data
-            change and return output.
-        arguments (Dict[str, graphene.Argument]): Or ``Arguments`` inner class with attributes on
-            Mutation class. Arguments to use for the mutation Field.
-        name (str): Name of the GraphQL type (must be unique in schema). Defaults to class
-            name.
-        description (str): Description of the GraphQL type in the schema. Defaults to class
-            docstring.
-        interfaces (Iterable[graphene.Interface]): GraphQL interfaces to extend with the payload
-            object. All fields from interface will be included in this object's schema.
-        fields (Dict[str, graphene.Field]): Dictionary of field name to Field. Not recommended to
-            use (prefer class attributes or ``Meta.output``).
+            
+    Meta options:
+        output, resolver, arguments, interfaces (and others) are available
     """
 
     @classmethod
@@ -76,36 +97,28 @@ class Mutation(ObjectType):
         _meta=None,
         **options,
     ):
+        from .interface import Interface  # for runtime checking
         if not _meta:
             _meta = MutationOptions(cls)
-        output = output or getattr(cls, "Output", None)
-        fields = {}
 
+        # If an inner Output class exists, use it as output.
+        output = output or getattr(cls, "Output", None)
+
+        # First, add fields from all interfaces (only if an output is set on the mutation,
+        # interfaces are merged with their fields)
+        fields = {}
         for interface in interfaces:
             assert issubclass(
                 interface, Interface
             ), f'All interfaces of {cls.__name__} must be a subclass of Interface. Received "{interface}".'
             fields.update(interface._meta.fields)
-        if not output:
-            # If output is defined, we don't need to get the fields
-            fields = {}
-            for base in reversed(cls.__mro__):
-                fields_with_names = []
-                for attname, value in list(base.__dict__.items()):
-                    if isinstance(value, MountedType):
-                        field = value
-                    elif isinstance(value, UnmountedType):
-                        field = Field.mounted(value)
-                    else:
-                        continue
-                    if not field:
-                        continue
-                    fields_with_names.append((attname, field))
 
-                fields_with_names = sorted(fields_with_names, key=lambda f: f[1])
-                extracted_fields = dict(fields_with_names)
-                fields.update(extracted_fields)
+        # Get fields: if output not provided then use cls as output and extract fields from its MRO.
+        if not output:
+            fields = _extract_fields_from_mro(cls, Field.mounted)
             output = cls
+
+        # Process arguments: try to grab from an inner "Arguments" or deprecated "Input"
         if not arguments:
             input_class = getattr(cls, "Arguments", None)
             if not input_class:
@@ -114,18 +127,21 @@ class Mutation(ObjectType):
                     warn_deprecation(
                         f"Please use {cls.__name__}.Arguments instead of {cls.__name__}.Input."
                         " Input is now only used in ClientMutationID.\n"
-                        "Read more:"
-                        " https://github.com/graphql-python/graphene/blob/v2.0.0/UPGRADE-v2.0.md#mutation-input"
+                        "Read more: "
+                        "https://github.com/graphql-python/graphene/blob/v2.0.0/UPGRADE-v2.0.md#mutation-input"
                     )
             arguments = props(input_class) if input_class else {}
+        # Process resolver: if not provided, use the mutate method.
         if not resolver:
             mutate = getattr(cls, "mutate", None)
             assert mutate, "All mutations must define a mutate method in it"
             resolver = get_unbound_function(mutate)
+
         if _meta.fields:
             _meta.fields.update(fields)
         else:
             _meta.fields = fields
+
         _meta.interfaces = interfaces
         _meta.output = output
         _meta.resolver = resolver
