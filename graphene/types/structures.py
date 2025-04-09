@@ -1,3 +1,4 @@
+
 import inspect
 from functools import partial
 
@@ -5,10 +6,18 @@ from .unmountedtype import UnmountedType
 from ..utils.module_loading import import_string
 
 
+def resolve_structure(raw):
+    """Helper to resolve the inner type of a structure."""
+    if isinstance(raw, str):
+        return import_string(raw)
+    if inspect.isfunction(raw) or isinstance(raw, partial):
+        return raw()
+    return raw
+
+
 class Structure(UnmountedType):
     """
-    A structure is a GraphQL type instance that
-    wraps a main type with certain structure.
+    A structure wraps a main type with a modifier (e.g. List or NonNull).
     """
 
     def __init__(self, of_type, *args, **kwargs):
@@ -24,35 +33,18 @@ class Structure(UnmountedType):
 
     @property
     def of_type(self):
-        # return get_type(self._of_type)
-        if isinstance(self._of_type, str):
-            return import_string(self._of_type)
-        if inspect.isfunction(self._of_type) or isinstance(self._of_type, partial):
-            return self._of_type()
-        return self._of_type
+        return resolve_structure(self._of_type)
 
     def get_type(self):
-        """
-        This function is called when the unmounted type (List or NonNull instance)
-        is mounted (as a Field, InputField or Argument)
-        """
         return self
 
 
 class List(Structure):
     """
-    List Modifier
-
-    A list is a kind of type marker, a wrapping type which points to another
-    type. Lists are often created within the context of defining the fields of
-    an object type.
-
-    List indicates that many values will be returned (or input) for this field.
-
-    .. code:: python
-
+    List Modifier: indicates that many values will be returned.
+    
+    Example:
         from graphene import List, String
-
         field_name = List(String, description="There will be many values")
     """
 
@@ -69,25 +61,11 @@ class List(Structure):
 
 class NonNull(Structure):
     """
-    Non-Null Modifier
-
-    A non-null is a kind of type marker, a wrapping type which points to another
-    type. Non-null types enforce that their values are never null and can ensure
-    an error is raised if this ever occurs during a request. It is useful for
-    fields which you can make a strong guarantee on non-nullability, for example
-    usually the id field of a database row will never be null.
-
-    Note: the enforcement of non-nullability occurs within the executor.
-
-    NonNull can also be indicated on all Mounted types with the keyword argument ``required``.
-
-    .. code:: python
-
+    Non-Null Modifier: enforces that values are never null.
+    
+    Example:
         from graphene import NonNull, String
-
         field_name = NonNull(String, description='This field will not be null')
-        another_field = String(required=True, description='This is equivalent to the above')
-
     """
 
     def __init__(self, *args, **kwargs):

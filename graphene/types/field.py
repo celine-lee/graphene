@@ -1,3 +1,4 @@
+
 import inspect
 from collections.abc import Mapping
 from functools import partial
@@ -20,48 +21,24 @@ def source_resolver(source, root, info, **args):
     return resolved
 
 
+def resolve_unbound(raw):
+    """Helper to resolve a type value if raw is a string, callable, or other."""
+    if isinstance(raw, str):
+        return import_string(raw)
+    if inspect.isfunction(raw) or isinstance(raw, partial):
+        return raw()
+    return raw
+
+
 class Field(MountedType):
     """
-    Makes a field available on an ObjectType in the GraphQL schema. Any type can be mounted as a
-    Field:
-
-    - Object Type
-    - Scalar Type
-    - Enum
-    - Interface
-    - Union
-
-    All class attributes of ``graphene.ObjectType`` are implicitly mounted as Field using the below
-    arguments.
-
-    .. code:: python
+    Makes a Field available on an ObjectType in the GraphQL schema.
+    
+    Example:
 
         class Person(ObjectType):
-            first_name = graphene.String(required=True)                # implicitly mounted as Field
-            last_name = graphene.Field(String, description='Surname')  # explicitly mounted as Field
-
-    args:
-        type (class for a graphene.UnmountedType): Must be a class (not an instance) of an
-            unmounted graphene type (ex. scalar or object) which is used for the type of this
-            field in the GraphQL schema. You can provide a dotted module import path (string)
-            to the class instead of the class itself (e.g. to avoid circular import issues).
-        args (optional, Dict[str, graphene.Argument]): Arguments that can be input to the field.
-            Prefer to use ``**extra_args``, unless you use an argument name that clashes with one
-            of the Field arguments presented here (see :ref:`example<ResolverParamGraphQLArguments>`).
-        resolver (optional, Callable): A function to get the value for a Field from the parent
-            value object. If not set, the default resolver method for the schema is used.
-        source (optional, str): attribute name to resolve for this field from the parent value
-            object. Alternative to resolver (cannot set both source and resolver).
-        deprecation_reason (optional, str): Setting this value indicates that the field is
-            depreciated and may provide instruction or reason on how for clients to proceed.
-        required (optional, bool): indicates this field as not null in the graphql schema. Same behavior as
-            graphene.NonNull. Default False.
-        name (optional, str): the name of the GraphQL field (must be unique in a type). Defaults to attribute
-            name.
-        description (optional, str): the description of the GraphQL field in the schema.
-        default_value (optional, Any): Default value to resolve if none set from schema.
-        **extra_args (optional, Dict[str, Union[graphene.Argument, graphene.UnmountedType]): any
-            additional arguments to mount on the field.
+            first_name = graphene.String()
+            last_name = graphene.Field(String, description="Surname")
     """
 
     def __init__(
@@ -82,22 +59,17 @@ class Field(MountedType):
         assert not args or isinstance(
             args, Mapping
         ), f'Arguments in a field have to be a mapping, received "{args}".'
-        assert not (
-            source and resolver
-        ), "A Field cannot have a source and a resolver in at the same time."
+        assert not (source and resolver), "A Field cannot have both source and resolver."
         assert not callable(
             default_value
-        ), f'The default value can not be a function but received "{base_type(default_value)}".'
+        ), f'The default value cannot be a function but received "{base_type(default_value)}".'
 
         if required:
             type_ = NonNull(type_)
 
-        # Check if name is actually an argument of the field
         if isinstance(name, (Argument, UnmountedType)):
             extra_args["name"] = name
             name = None
-
-        # Check if source is actually an argument of the field
         if isinstance(source, (Argument, UnmountedType)):
             extra_args["source"] = source
             source = None
@@ -114,30 +86,20 @@ class Field(MountedType):
 
     @property
     def type(self):
-        if isinstance(self._type, str):
-            return import_string(self._type)
-        if inspect.isfunction(self._type) or isinstance(self._type, partial):
-            return self._type()
-        return self._type
+        return resolve_unbound(self._type)
 
     get_resolver = None
 
     def wrap_resolve(self, parent_resolver):
         """
-        Wraps a function resolver, using the ObjectType resolve_{FIELD_NAME}
-        (parent_resolver) if the Field definition has no resolver.
+        Wrap a function resolver; uses get_resolver (if defined) or falls back to the provided resolver.
         """
         if self.get_resolver is not None:
             warn_deprecation(
                 "The get_resolver method is being deprecated, please rename it to wrap_resolve."
             )
             return self.get_resolver(parent_resolver)
-
         return self.resolver or parent_resolver
 
     def wrap_subscribe(self, parent_subscribe):
-        """
-        Wraps a function subscribe, using the ObjectType subscribe_{FIELD_NAME}
-        (parent_subscribe) if the Field definition has no subscribe.
-        """
         return parent_subscribe

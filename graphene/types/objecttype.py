@@ -1,3 +1,4 @@
+
 from typing import TYPE_CHECKING
 
 from .base import BaseOptions, BaseType, BaseTypeMeta
@@ -8,9 +9,26 @@ from .unmountedtype import UnmountedType
 
 from dataclasses import make_dataclass, field
 
-# For static type checking with type checker
 if TYPE_CHECKING:
     from typing import Dict, Iterable, Type  # NOQA
+
+
+def extract_object_fields(cls):
+    collected = {}
+    for base in reversed(cls.__mro__):
+        items = []
+        for attname, value in list(base.__dict__.items()):
+            field_inst = None
+            if isinstance(value, MountedType):
+                field_inst = value
+            elif isinstance(value, UnmountedType):
+                field_inst = Field.mounted(value)
+            if not field_inst:
+                continue
+            items.append((attname, field_inst))
+        items = sorted(items, key=lambda f: f[1])
+        collected.update(dict(items))
+    return collected
 
 
 class ObjectTypeOptions(BaseOptions):
@@ -20,9 +38,6 @@ class ObjectTypeOptions(BaseOptions):
 
 class ObjectTypeMeta(BaseTypeMeta):
     def __new__(cls, name_, bases, namespace, **options):
-        # Note: it's safe to pass options as keyword arguments as they are still type-checked by ObjectTypeOptions.
-
-        # We create this type, to then overload it with the dataclass attrs
         class InterObjectType:
             pass
 
@@ -30,7 +45,7 @@ class ObjectTypeMeta(BaseTypeMeta):
             cls, name_, (InterObjectType,) + bases, namespace, **options
         )
         if base_cls._meta:
-            fields = [
+            field_definitions = [
                 (
                     key,
                     "typing.Any",
@@ -42,83 +57,27 @@ class ObjectTypeMeta(BaseTypeMeta):
                 )
                 for key, field_value in base_cls._meta.fields.items()
             ]
-            dataclass = make_dataclass(name_, fields, bases=())
-            InterObjectType.__init__ = dataclass.__init__
-            InterObjectType.__eq__ = dataclass.__eq__
-            InterObjectType.__repr__ = dataclass.__repr__
+            dataclass_type = make_dataclass(name_, field_definitions, bases=())
+            InterObjectType.__init__ = dataclass_type.__init__
+            InterObjectType.__eq__ = dataclass_type.__eq__
+            InterObjectType.__repr__ = dataclass_type.__repr__
         return base_cls
 
 
 class ObjectType(BaseType, metaclass=ObjectTypeMeta):
     """
-    Object Type Definition
+    Object Type Definition.
 
-    Almost all of the GraphQL types you define will be object types. Object types
-    have a name, but most importantly describe their fields.
-
-    The name of the type defined by an _ObjectType_ defaults to the class name. The type
-    description defaults to the class docstring. This can be overridden by adding attributes
-    to a Meta inner class.
-
-    The class attributes of an _ObjectType_ are mounted as instances of ``graphene.Field``.
-
-    Methods starting with ``resolve_<field_name>`` are bound as resolvers of the matching Field
-    name. If no resolver is provided, the default resolver is used.
-
-    Ambiguous types with Interface and Union can be determined through ``is_type_of`` method and
-    ``Meta.possible_types`` attribute.
-
-    .. code:: python
+    Example:
 
         from graphene import ObjectType, String, Field
 
         class Person(ObjectType):
-            class Meta:
-                description = 'A human'
-
-            # implicitly mounted as Field
             first_name = String()
-            # explicitly mounted as Field
             last_name = Field(String)
 
             def resolve_last_name(parent, info):
-                return last_name
-
-    ObjectType must be mounted using ``graphene.Field``.
-
-    .. code:: python
-
-        from graphene import ObjectType, Field
-
-        class Query(ObjectType):
-
-            person = Field(Person, description="My favorite person")
-
-    Meta class options (optional):
-        name (str): Name of the GraphQL type (must be unique in schema). Defaults to class
-            name.
-        description (str): Description of the GraphQL type in the schema. Defaults to class
-            docstring.
-        interfaces (Iterable[graphene.Interface]): GraphQL interfaces to extend with this object.
-            all fields from interface will be included in this object's schema.
-        possible_types (Iterable[class]): Used to test parent value object via isinstance to see if
-            this type can be used to resolve an ambiguous type (interface, union).
-        default_resolver (any Callable resolver): Override the default resolver for this
-            type. Defaults to graphene default resolver which returns an attribute or dictionary
-            key with the same name as the field.
-        fields (Dict[str, graphene.Field]): Dictionary of field name to Field. Not recommended to
-            use (prefer class attributes).
-
-    An _ObjectType_ can be used as a simple value object by creating an instance of the class.
-
-    .. code:: python
-
-        p = Person(first_name='Bob', last_name='Roberts')
-        assert p.first_name == 'Bob'
-
-    Args:
-        *args (List[Any]): Positional values to use for Field values of value object
-        **kwargs (Dict[str: Any]): Keyword arguments to use for Field values of value object
+                return "Smith"
     """
 
     @classmethod
@@ -139,24 +98,10 @@ class ObjectType(BaseType, metaclass=ObjectTypeMeta):
                 interface, Interface
             ), f'All interfaces of {cls.__name__} must be a subclass of Interface. Received "{interface}".'
             fields.update(interface._meta.fields)
-        for base in reversed(cls.__mro__):
-
-            fields_with_names = []
-            for attname, value in list(base.__dict__.items()):
-                field = None
-                if isinstance(value, MountedType):
-                    field = value
-                elif isinstance(value, UnmountedType):
-                    field = Field.mounted(value)
-                if not field:
-                    continue
-                fields_with_names.append((attname, field))
-            fields_with_names = sorted(fields_with_names, key=lambda f: f[1])
-            extracted_fields = dict(fields_with_names)
-            fields.update(extracted_fields)
+        fields.update(extract_object_fields(cls))
         assert not (possible_types and cls.is_type_of), (
-            f"{cls.__name__}.Meta.possible_types will cause type collision with {cls.__name__}.is_type_of. "
-            "Please use one or other."
+            f"{cls.__name__}.Meta.possible_types will cause collision with {cls.__name__}.is_type_of. "
+            "Please use one or the other."
         )
 
         if _meta.fields:

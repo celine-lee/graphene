@@ -1,3 +1,4 @@
+
 from typing import TYPE_CHECKING
 
 from .base import BaseOptions, BaseType
@@ -5,9 +6,27 @@ from .inputfield import InputField
 from .unmountedtype import UnmountedType
 from .mountedtype import MountedType
 
-# For static type checking with type checker
 if TYPE_CHECKING:
     from typing import Dict, Callable  # NOQA
+
+
+def extract_input_fields(cls):
+    collected = {}
+    for base in reversed(cls.__mro__):
+        items = []
+        for attname, value in list(base.__dict__.items()):
+            if isinstance(value, MountedType):
+                field_inst = value
+            elif isinstance(value, UnmountedType):
+                field_inst = InputField.mounted(value)
+            else:
+                continue
+            if not field_inst:
+                continue
+            items.append((attname, field_inst))
+        items = sorted(items, key=lambda f: f[1])
+        collected.update(dict(items))
+    return collected
 
 
 class InputObjectTypeOptions(BaseOptions):
@@ -15,26 +34,12 @@ class InputObjectTypeOptions(BaseOptions):
     container = None  # type: InputObjectTypeContainer
 
 
-# Currently in Graphene, we get a `None` whenever we access an (optional) field that was not set in an InputObjectType
-# using the InputObjectType.<attribute> dot access syntax. This is ambiguous, because in this current (Graphene
-# historical) arrangement, we cannot distinguish between a field not being set and a field being set to None.
-# At the same time, we shouldn't break existing code that expects a `None` when accessing a field that was not set.
 _INPUT_OBJECT_TYPE_DEFAULT_VALUE = None
-
-# To mitigate this, we provide the function `set_input_object_type_default_value` to allow users to change the default
-# value returned in non-specified fields in InputObjectType to another meaningful sentinel value (e.g. Undefined)
-# if they want to. This way, we can keep code that expects a `None` working while we figure out a better solution (or
-# a well-documented breaking change) for this issue.
 
 
 def set_input_object_type_default_value(default_value):
     """
-    Change the sentinel value returned by non-specified fields in an InputObjectType
-    Useful to differentiate between a field not being set and a field being set to None by using a sentinel value
-    (e.g. Undefined is a good sentinel value for this purpose)
-
-    This function should be called at the beginning of the app or in some other place where it is guaranteed to
-    be called before any InputObjectType is defined.
+    Change the sentinel value returned for non-specified fields in an InputObjectType.
     """
     global _INPUT_OBJECT_TYPE_DEFAULT_VALUE
     _INPUT_OBJECT_TYPE_DEFAULT_VALUE = default_value
@@ -55,38 +60,15 @@ class InputObjectTypeContainer(dict, BaseType):  # type: ignore
 
 class InputObjectType(UnmountedType, BaseType):
     """
-    Input Object Type Definition
+    Input Object Type Definition.
 
-    An input object defines a structured collection of fields which may be
-    supplied to a field argument.
-
-    Using ``graphene.NonNull`` will ensure that a input value must be provided by the query.
-
-    All class attributes of ``graphene.InputObjectType`` are implicitly mounted as InputField
-    using the below Meta class options.
-
-    .. code:: python
+    Example:
 
         from graphene import InputObjectType, String, InputField
 
         class Person(InputObjectType):
-            # implicitly mounted as Input Field
             first_name = String(required=True)
-            # explicitly mounted as Input Field
             last_name = InputField(String, description="Surname")
-
-    The fields on an input object type can themselves refer to input object types, but you can't
-    mix input and output types in your schema.
-
-    Meta class options (optional):
-        name (str): the name of the GraphQL type (must be unique in schema). Defaults to class
-            name.
-        description (str): the description of the GraphQL type in the schema. Defaults to class
-            docstring.
-        container (class): A class reference for a value object that allows for
-            attribute initialization and access. Default InputObjectTypeContainer.
-        fields (Dict[str, graphene.InputField]): Dictionary of field name to InputField. Not
-            recommended to use (prefer class attributes).
     """
 
     @classmethod
@@ -94,21 +76,7 @@ class InputObjectType(UnmountedType, BaseType):
         if not _meta:
             _meta = InputObjectTypeOptions(cls)
 
-        fields = {}
-        for base in reversed(cls.__mro__):
-            fields_with_names = []
-            for attname, value in list(base.__dict__.items()):
-                if isinstance(value, MountedType):
-                    field = value
-                elif isinstance(value, UnmountedType):
-                    field = InputField.mounted(value)
-                else:
-                    continue
-                if not field:
-                    continue
-                fields_with_names.append((attname, field))
-            extracted_fields = dict(sorted(fields_with_names, key=lambda f: f[1]))
-            fields.update(extracted_fields)
+        fields = extract_input_fields(cls)
 
         if _meta.fields:
             _meta.fields.update(fields)
@@ -121,8 +89,4 @@ class InputObjectType(UnmountedType, BaseType):
 
     @classmethod
     def get_type(cls):
-        """
-        This function is called when the unmounted type (InputObjectType instance)
-        is mounted (as a Field, InputField or Argument)
-        """
         return cls
