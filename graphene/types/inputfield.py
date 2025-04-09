@@ -1,3 +1,4 @@
+
 import inspect
 from functools import partial
 from graphql import Undefined
@@ -5,6 +6,15 @@ from graphql import Undefined
 from .mountedtype import MountedType
 from .structures import NonNull
 from ..utils.module_loading import import_string
+
+
+def resolve_type_field(type_):
+    """Helper to return the actual type given a string, function or partial."""
+    if isinstance(type_, str):
+        return import_string(type_)
+    if inspect.isfunction(type_) or isinstance(type_, partial):
+        return type_()
+    return type_
 
 
 class InputField(MountedType):
@@ -73,8 +83,4 @@ class InputField(MountedType):
 
     @property
     def type(self):
-        if isinstance(self._type, str):
-            return import_string(self._type)
-        if inspect.isfunction(self._type) or isinstance(self._type, partial):
-            return self._type()
-        return self._type
+        return resolve_type_field(self._type)

@@ -1,3 +1,4 @@
+
 from typing import TYPE_CHECKING
 
 from .base import BaseOptions, BaseType
@@ -20,12 +21,6 @@ class InputObjectTypeOptions(BaseOptions):
 # historical) arrangement, we cannot distinguish between a field not being set and a field being set to None.
 # At the same time, we shouldn't break existing code that expects a `None` when accessing a field that was not set.
 _INPUT_OBJECT_TYPE_DEFAULT_VALUE = None
-
-# To mitigate this, we provide the function `set_input_object_type_default_value` to allow users to change the default
-# value returned in non-specified fields in InputObjectType to another meaningful sentinel value (e.g. Undefined)
-# if they want to. This way, we can keep code that expects a `None` working while we figure out a better solution (or
-# a well-documented breaking change) for this issue.
-
 
 def set_input_object_type_default_value(default_value):
     """
@@ -51,6 +46,25 @@ class InputObjectTypeContainer(dict, BaseType):  # type: ignore
 
     def __init_subclass__(cls, *args, **kwargs):
         pass
+
+
+def collect_input_fields(cls):
+    """Collect InputFields from all bases using InputField.mounted."""
+    fields = {}
+    for base in reversed(cls.__mro__):
+        field_list = []
+        for attname, value in base.__dict__.items():
+            if isinstance(value, MountedType):
+                field_obj = value
+            elif isinstance(value, UnmountedType):
+                field_obj = InputField.mounted(value)
+            else:
+                continue
+            if field_obj:
+                field_list.append((attname, field_obj))
+        field_list.sort(key=lambda f: f[1])
+        fields.update(dict(field_list))
+    return fields
 
 
 class InputObjectType(UnmountedType, BaseType):
@@ -94,21 +108,7 @@ class InputObjectType(UnmountedType, BaseType):
         if not _meta:
             _meta = InputObjectTypeOptions(cls)
 
-        fields = {}
-        for base in reversed(cls.__mro__):
-            fields_with_names = []
-            for attname, value in list(base.__dict__.items()):
-                if isinstance(value, MountedType):
-                    field = value
-                elif isinstance(value, UnmountedType):
-                    field = InputField.mounted(value)
-                else:
-                    continue
-                if not field:
-                    continue
-                fields_with_names.append((attname, field))
-            extracted_fields = dict(sorted(fields_with_names, key=lambda f: f[1]))
-            fields.update(extracted_fields)
+        fields = collect_input_fields(cls)
 
         if _meta.fields:
             _meta.fields.update(fields)
@@ -121,8 +121,4 @@ class InputObjectType(UnmountedType, BaseType):
 
     @classmethod
     def get_type(cls):
-        """
-        This function is called when the unmounted type (InputObjectType instance)
-        is mounted (as a Field, InputField or Argument)
-        """
         return cls

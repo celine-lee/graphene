@@ -1,8 +1,18 @@
+
 import inspect
 from functools import partial
 
 from .unmountedtype import UnmountedType
 from ..utils.module_loading import import_string
+
+
+def resolve_inner_type(inner):
+    """Helper to resolve inner type if it is a string or a callable."""
+    if isinstance(inner, str):
+        return import_string(inner)
+    if inspect.isfunction(inner) or isinstance(inner, partial):
+        return inner()
+    return inner
 
 
 class Structure(UnmountedType):
@@ -24,18 +34,9 @@ class Structure(UnmountedType):
 
     @property
     def of_type(self):
-        # return get_type(self._of_type)
-        if isinstance(self._of_type, str):
-            return import_string(self._of_type)
-        if inspect.isfunction(self._of_type) or isinstance(self._of_type, partial):
-            return self._of_type()
-        return self._of_type
+        return resolve_inner_type(self._of_type)
 
     def get_type(self):
-        """
-        This function is called when the unmounted type (List or NonNull instance)
-        is mounted (as a Field, InputField or Argument)
-        """
         return self
 
 
@@ -80,14 +81,6 @@ class NonNull(Structure):
     Note: the enforcement of non-nullability occurs within the executor.
 
     NonNull can also be indicated on all Mounted types with the keyword argument ``required``.
-
-    .. code:: python
-
-        from graphene import NonNull, String
-
-        field_name = NonNull(String, description='This field will not be null')
-        another_field = String(required=True, description='This is equivalent to the above')
-
     """
 
     def __init__(self, *args, **kwargs):

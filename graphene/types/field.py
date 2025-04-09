@@ -1,3 +1,4 @@
+
 import inspect
 from collections.abc import Mapping
 from functools import partial
@@ -18,6 +19,15 @@ def source_resolver(source, root, info, **args):
     if inspect.isfunction(resolved) or inspect.ismethod(resolved):
         return resolved()
     return resolved
+
+
+def resolve_type_field(type_):
+    """Helper to resolve a field’s type if given as a string or callable."""
+    if isinstance(type_, str):
+        return import_string(type_)
+    if inspect.isfunction(type_) or isinstance(type_, partial):
+        return type_()
+    return type_
 
 
 class Field(MountedType):
@@ -114,19 +124,11 @@ class Field(MountedType):
 
     @property
     def type(self):
-        if isinstance(self._type, str):
-            return import_string(self._type)
-        if inspect.isfunction(self._type) or isinstance(self._type, partial):
-            return self._type()
-        return self._type
+        return resolve_type_field(self._type)
 
     get_resolver = None
 
     def wrap_resolve(self, parent_resolver):
-        """
-        Wraps a function resolver, using the ObjectType resolve_{FIELD_NAME}
-        (parent_resolver) if the Field definition has no resolver.
-        """
         if self.get_resolver is not None:
             warn_deprecation(
                 "The get_resolver method is being deprecated, please rename it to wrap_resolve."
@@ -136,8 +138,4 @@ class Field(MountedType):
         return self.resolver or parent_resolver
 
     def wrap_subscribe(self, parent_subscribe):
-        """
-        Wraps a function subscribe, using the ObjectType subscribe_{FIELD_NAME}
-        (parent_subscribe) if the Field definition has no subscribe.
-        """
         return parent_subscribe

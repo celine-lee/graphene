@@ -1,3 +1,4 @@
+
 import inspect
 from functools import partial
 from itertools import chain
@@ -7,6 +8,15 @@ from .dynamic import Dynamic
 from .mountedtype import MountedType
 from .structures import NonNull
 from ..utils.module_loading import import_string
+
+
+def resolve_type_arg(type_):
+    """Resolve an argument type if provided as a string or callable."""
+    if isinstance(type_, str):
+        return import_string(type_)
+    if inspect.isfunction(type_) or isinstance(type_, partial):
+        return type_()
+    return type_
 
 
 class Argument(MountedType):
@@ -55,13 +65,11 @@ class Argument(MountedType):
         _creation_counter=None,
     ):
         super(Argument, self).__init__(_creation_counter=_creation_counter)
-
         if required:
             assert (
                 deprecation_reason is None
             ), f"Argument {name} is required, cannot deprecate it."
             type_ = NonNull(type_)
-
         self.name = name
         self._type = type_
         self.default_value = default_value
@@ -70,11 +78,7 @@ class Argument(MountedType):
 
     @property
     def type(self):
-        if isinstance(self._type, str):
-            return import_string(self._type)
-        if inspect.isfunction(self._type) or isinstance(self._type, partial):
-            return self._type()
-        return self._type
+        return resolve_type_arg(self._type)
 
     def __eq__(self, other):
         return isinstance(other, Argument) and (
@@ -101,8 +105,6 @@ def to_arguments(args, extra_args=None):
         if isinstance(arg, Dynamic):
             arg = arg.get_type()
             if arg is None:
-                # If the Dynamic type returned None
-                # then we skip the Argument
                 continue
 
         if isinstance(arg, UnmountedType):

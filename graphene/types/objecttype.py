@@ -1,3 +1,4 @@
+
 from typing import TYPE_CHECKING
 
 from .base import BaseOptions, BaseType, BaseTypeMeta
@@ -13,6 +14,24 @@ if TYPE_CHECKING:
     from typing import Dict, Iterable, Type  # NOQA
 
 
+def collect_fields(cls, mount_fn):
+    """Helper to collect all fields defined on a class (or its bases) using the given mount_fn."""
+    fields = {}
+    for base in reversed(cls.__mro__):
+        field_list = []
+        for attname, value in base.__dict__.items():
+            field_obj = None
+            if isinstance(value, MountedType):
+                field_obj = value
+            elif isinstance(value, UnmountedType):
+                field_obj = Field.mounted(value)
+            if field_obj:
+                field_list.append((attname, field_obj))
+        field_list.sort(key=lambda f: f[1])
+        fields.update(dict(field_list))
+    return fields
+
+
 class ObjectTypeOptions(BaseOptions):
     fields = None  # type: Dict[str, Field]
     interfaces = ()  # type: Iterable[Type[Interface]]
@@ -21,8 +40,6 @@ class ObjectTypeOptions(BaseOptions):
 class ObjectTypeMeta(BaseTypeMeta):
     def __new__(cls, name_, bases, namespace, **options):
         # Note: it's safe to pass options as keyword arguments as they are still type-checked by ObjectTypeOptions.
-
-        # We create this type, to then overload it with the dataclass attrs
         class InterObjectType:
             pass
 
@@ -115,10 +132,6 @@ class ObjectType(BaseType, metaclass=ObjectTypeMeta):
 
         p = Person(first_name='Bob', last_name='Roberts')
         assert p.first_name == 'Bob'
-
-    Args:
-        *args (List[Any]): Positional values to use for Field values of value object
-        **kwargs (Dict[str: Any]): Keyword arguments to use for Field values of value object
     """
 
     @classmethod
@@ -139,21 +152,7 @@ class ObjectType(BaseType, metaclass=ObjectTypeMeta):
                 interface, Interface
             ), f'All interfaces of {cls.__name__} must be a subclass of Interface. Received "{interface}".'
             fields.update(interface._meta.fields)
-        for base in reversed(cls.__mro__):
-
-            fields_with_names = []
-            for attname, value in list(base.__dict__.items()):
-                field = None
-                if isinstance(value, MountedType):
-                    field = value
-                elif isinstance(value, UnmountedType):
-                    field = Field.mounted(value)
-                if not field:
-                    continue
-                fields_with_names.append((attname, field))
-            fields_with_names = sorted(fields_with_names, key=lambda f: f[1])
-            extracted_fields = dict(fields_with_names)
-            fields.update(extracted_fields)
+        fields.update(collect_fields(cls, Field.mounted))
         assert not (possible_types and cls.is_type_of), (
             f"{cls.__name__}.Meta.possible_types will cause type collision with {cls.__name__}.is_type_of. "
             "Please use one or other."

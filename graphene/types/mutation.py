@@ -1,3 +1,4 @@
+
 from typing import TYPE_CHECKING
 
 from ..utils.deprecated import warn_deprecation
@@ -13,6 +14,25 @@ from .unmountedtype import UnmountedType
 if TYPE_CHECKING:
     from .argument import Argument  # NOQA
     from typing import Dict, Type, Callable, Iterable  # NOQA
+
+
+def collect_fields(cls, mount_fn):
+    """Helper: Collect fields from all bases using the given mount method."""
+    fields = {}
+    for base in reversed(cls.__mro__):
+        field_list = []
+        for attname, value in base.__dict__.items():
+            if isinstance(value, MountedType):
+                field_obj = value
+            elif isinstance(value, UnmountedType):
+                field_obj = mount_fn(value)
+            else:
+                continue
+            if field_obj:
+                field_list.append((attname, field_obj))
+        field_list.sort(key=lambda f: f[1])
+        fields.update(dict(field_list))
+    return fields
 
 
 class MutationOptions(ObjectTypeOptions):
@@ -81,30 +101,15 @@ class Mutation(ObjectType):
         output = output or getattr(cls, "Output", None)
         fields = {}
 
+        # Inherit fields from declared Interfaces.
         for interface in interfaces:
             assert issubclass(
                 interface, Interface
             ), f'All interfaces of {cls.__name__} must be a subclass of Interface. Received "{interface}".'
             fields.update(interface._meta.fields)
         if not output:
-            # If output is defined, we don't need to get the fields
-            fields = {}
-            for base in reversed(cls.__mro__):
-                fields_with_names = []
-                for attname, value in list(base.__dict__.items()):
-                    if isinstance(value, MountedType):
-                        field = value
-                    elif isinstance(value, UnmountedType):
-                        field = Field.mounted(value)
-                    else:
-                        continue
-                    if not field:
-                        continue
-                    fields_with_names.append((attname, field))
-
-                fields_with_names = sorted(fields_with_names, key=lambda f: f[1])
-                extracted_fields = dict(fields_with_names)
-                fields.update(extracted_fields)
+            # For output type, extract the mounted/unmounted fields via the helper below.
+            fields.update(collect_fields(cls, Field.mounted))
             output = cls
         if not arguments:
             input_class = getattr(cls, "Arguments", None)
